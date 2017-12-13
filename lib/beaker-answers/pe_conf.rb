@@ -3,7 +3,6 @@ module BeakerAnswers
   # the initial MEEP pe.conf for a given set of hosts and a particular
   # MEEP pe.conf schema version.
   class PeConf
-
     # The default pe.conf schema version.
     DEFAULT_VERSION = '1.0'.freeze
 
@@ -18,17 +17,17 @@ module BeakerAnswers
     # with beaker in CI to establish that a host has that component
     # installed on it.
     COMPONENTS = [
-      ["primary_master", "master"],
-      ["primary_master_replica"],
+      %w[primary_master master],
+      ['primary_master_replica'],
       # the 'database' alias will be troublesome if/when we begin
       # breaking out a managed database (as opposed to external)
       # in future PE layouts.
-      ["puppetdb", "database"],
-      ["console", "classifier", "dashboard"],
-      ["compile_master"],
-      ["mco_hub", "hub"],
-      ["mco_broker", "spoke"],
-    ]
+      %w[puppetdb database],
+      %w[console classifier dashboard],
+      ['compile_master'],
+      %w[mco_hub hub],
+      %w[mco_broker spoke]
+    ].freeze
 
     attr_accessor :hosts, :meep_schema_version, :options
 
@@ -57,7 +56,7 @@ module BeakerAnswers
         _generate_1_0_data
       when '2.0'
         _generate_2_0_data
-      else raise(RuntimeError, "Unknown how to produce pe.conf data for meep_schema_version: '#{meep_schema_version}'")
+      else raise "Unknown how to produce pe.conf data for meep_schema_version: '#{meep_schema_version}'"
       end
     end
 
@@ -67,7 +66,7 @@ module BeakerAnswers
     # in the options.
     def _generate_1_0_data
       pe_conf = {}
-      ns = "puppet_enterprise"
+      ns = 'puppet_enterprise'
 
       master = the_host_with_role('master')
       puppetdb = the_host_with_role('database')
@@ -87,7 +86,7 @@ module BeakerAnswers
 
     def _generate_2_0_data
       pe_conf = {
-        "node_roles" => {}
+        'node_roles' => {}
       }
       hosts_by_component = {}
 
@@ -95,28 +94,27 @@ module BeakerAnswers
         meep_component_name = aliases.first
         # Only generate node_role settings for installing primary nodes
         # Secondary infrastructure will be added dynamically later
-        next unless ['primary_master', 'puppetdb', 'console'].include?(meep_component_name)
+        next unless %w[primary_master puppetdb console].include?(meep_component_name)
         hosts_by_component[meep_component_name] = all_hostnames_with_component(aliases)
       end
 
       # Reject console and puppetdb lists if they are the same as master
-      hosts_by_component.reject! do |component,hosts|
-        ["puppetdb", "console"].include?(component) &&
-          hosts_by_component["primary_master"].sort == hosts.sort
+      hosts_by_component.reject! do |component, hosts|
+        %w[puppetdb console].include?(component) &&
+          hosts_by_component['primary_master'].sort == hosts.sort
       end
 
       # Which is also sufficient to determine our architecture at the moment
-      architecture = (hosts_by_component.keys & ["puppetdb", "console"]).empty? ?
-        "monolithic" :
-        "split"
+      architecture = (hosts_by_component.keys & %w[puppetdb console]).empty? ?
+        'monolithic' :
+        'split'
 
       # Set the node_roles
-      hosts_by_component.reduce(pe_conf) do |conf,entry|
+      hosts_by_component.each_with_object(pe_conf) do |entry, conf|
         component, hosts = entry
-        if !hosts.empty?
-          conf["node_roles"]["pe_role::#{architecture}::#{component}"] = hosts
+        unless hosts.empty?
+          conf['node_roles']["pe_role::#{architecture}::#{component}"] = hosts
         end
-        conf
       end
 
       # Collect a uniq array of all host platforms modified to pe_repo class format
@@ -125,11 +123,11 @@ module BeakerAnswers
         if platform =~ /^windows.*/
           platform = platform =~ /64/ ? 'windows_x86_64' : 'windows_i386'
         end
-        platform.gsub(/-/, '_').gsub(/\./,'')
+        platform.tr('-', '_').delete('.')
       end.uniq
-      pe_conf["agent_platforms"] = platforms
+      pe_conf['agent_platforms'] = platforms
 
-      pe_conf["meep_schema_version"] = "2.0"
+      pe_conf['meep_schema_version'] = '2.0'
 
       pe_conf
     end
@@ -139,10 +137,10 @@ module BeakerAnswers
     # @return [Array<String>] of hostnames from @hosts that include at least
     #   one of the passed aliases
     def all_hostnames_with_component(host_role_aliases)
-      found_hosts = hosts.select do |h|
-        !(Array(h['roles']) & host_role_aliases).empty?
+      found_hosts = hosts.reject do |h|
+        (Array(h['roles']) & host_role_aliases).empty?
       end
-      found_hosts.map { |h| h.hostname }
+      found_hosts.map(&:hostname)
     end
 
     # Find a single host with the role provided.  Raise an error if more than
@@ -157,7 +155,7 @@ module BeakerAnswers
         Array(h['roles']).include?(role.to_s)
       end
 
-      if found_hosts.length == 0 or found_hosts.length > 1
+      if found_hosts.empty? || (found_hosts.length > 1)
         raise ArgumentError, "There should be one host with #{role} defined, found #{found_hosts.length} matching hosts (#{found_hosts})"
       end
       found_hosts.first
